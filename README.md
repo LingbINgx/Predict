@@ -21,7 +21,7 @@
 
 ---
 
-# 机器故障预测性维护分析报告
+# 机器故障预测
 
 ## 1. 数据加载与探索
 
@@ -62,6 +62,10 @@ class pt_feature():
 **解释：**
 
 - 该类用于批量展示 `Air temperature`, `Process temperature`, `Rotational speed`, `Torque` 等特征的分布，帮助识别数据偏态或异常值。
+
+![PT](output.png)
+
+![PT1](output1.png)
 
 ### 2.2 数据标准化
 
@@ -286,4 +290,4 @@ print(best_th, precision[best_idx], recall[best_idx], f1[best_idx])
 
 1.  **特征处理**: 对不同物理属性分别进行标准化和归一化，有助于模型收敛。
 2.  **不平衡处理**: `class_weight='balanced'` 参数在 Logistic Regression 和 Decision Tree 中均能有效提升对故障样本的召回率。
-3.  **小样本策略**: 在仅有 1% 训练数据的情况下，单模型往往表现不稳定。通过集成三种差异较大的模型（LR, SVM, RF）并进行加权软投票，显著提升了模型的鲁棒性。
+3.  **小样本策略**: 通过集成三种差异较大的模型（LR, SVM, RF）并进行加权软投票。
