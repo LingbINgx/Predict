@@ -13,20 +13,17 @@ import modAL.uncertainty
 from imblearn.over_sampling import SMOTE
 from imblearn.combine import SMOTEENN
 from xgboost import XGBClassifier
-
+from lightgbm import LGBMClassifier
 
 class BasicActiveLearner:
-    """
-    基础的主动学习模板类
-    """
+
     def __init__(self, estimator=None, query_strategy='uncertainty', random_state=42):
         """
         初始化主动学习器
-        
-        参数:
-        estimator: 基础分类器，默认使用随机森林
-        query_strategy: 查询策略 ('uncertainty', 'margin', 'entropy')
-        random_state: 随机种子
+
+        :param estimator: 基础分类器
+        :param query_strategy: 查询策略 ('uncertainty', 'margin', 'entropy')
+        :param random_state: 随机种子
         """
         self.random_state = random_state
         np.random.seed(random_state)
@@ -56,12 +53,11 @@ class BasicActiveLearner:
     def load_data(self, X, y, test_size=0.5, imbalance_handle='None', **kwargs):
         """
         加载数据并划分测试集
-        
-        参数:
-        X: 特征数据
-        y: 标签数据
-        test_size: 测试集比例
-        imbalance_handle: 进行不平衡处理 ('None', 'SMOTE', 'SMOTEENN')
+
+        :param X: 特征数据
+        :param y: 标签数据
+        :param test_size: 测试集比例
+        :param imbalance_handle: 进行不平衡处理 ('None', 'SMOTE', 'SMOTEENN')
         """
         self.X_pool, self.X_test, self.y_pool, self.y_test = train_test_split(
             X, y,
@@ -83,9 +79,6 @@ class BasicActiveLearner:
     
         
     def initialize_data(self, initial_size=10):# -> tuple[Any, Any, Any, Any]:
-        """
-        初始化数据，划分已标注和未标注数据
-        """
         self.X_labeled, self.X_unlabeled, self.y_labeled, self.y_unlabeled = train_test_split(
             self.X_pool, self.y_pool,
             train_size=initial_size,
@@ -97,7 +90,6 @@ class BasicActiveLearner:
         return self.X_labeled, self.y_labeled, self.X_unlabeled, self.y_unlabeled
     
     def create_learner(self):
-        """创建主动学习器"""
         self.learner = ActiveLearner(
             estimator=self.estimator,
             query_strategy=self.query_strategy,
@@ -107,17 +99,13 @@ class BasicActiveLearner:
         return self.learner
     
     @logger.catch()
-    def active_learning_cycle(self, n_queries=50, query_size=1, threshold=0.5):
+    def active_learning_cycle(self, n_queries=50, query_size=1, threshold=0.5, **kwargs):
         """
         执行主动学习循环
         
-        参数:
-        n_queries: 查询轮次
-        query_size: 每轮查询样本数
-        threshold: 分类阈值
-        
-        返回:
-        metrics: 包含每轮次性能指标的字典
+        :param n_queries: 查询轮次
+        :param query_size: 每轮查询样本数
+        :param threshold: 分类阈值
         """
         if self.learner is None:
             self.create_learner()
@@ -144,12 +132,11 @@ class BasicActiveLearner:
             )
             
             ratio = self._update_ratio()
-            self._update_ensemble_weights(self.learner.estimator, ratio)
+            _update_ensemble_weights(self.learner.estimator, ratio)
             
             self.X_unlabeled = np.delete(self.X_unlabeled, query_idx, axis=0)
             self.y_unlabeled = np.delete(self.y_unlabeled, query_idx, axis=0)
             
-            # 评估性能
             y_prob = self.learner.predict_proba(self.X_test)[:, 1]
             y_pred = (y_prob > threshold).astype(int)
             
@@ -165,9 +152,6 @@ class BasicActiveLearner:
         return metrics
     
     def plot_precision_recall_curve(self, metrics):
-        """
-        绘制精确率-召回率曲线
-        """
         precisions = [report['1.0']['precision'] for report in metrics['report']]
         recalls = [report['1.0']['recall'] for report in metrics['report']]
         
@@ -187,21 +171,51 @@ class BasicActiveLearner:
         neg_cnt = np.sum(y == 0)
         pos_cnt = np.sum(y == 1)
         return neg_cnt / pos_cnt if pos_cnt > 0 else 1.0
+
     
-    def _update_ensemble_weights(self, model, ratio):
-        weight_dict = {0: 1.0, 1: ratio}
-        if isinstance(model, XGBClassifier):
-            model.set_params(scale_pos_weight=ratio)
-        elif hasattr(model, 'class_weight'):
-            model.set_params(class_weight=weight_dict)
-        elif hasattr(model, 'estimators'):
-            estimators = getattr(model, 'estimators', [])
-            if isinstance(estimators, list):
-                for _, est in estimators:
-                    self._update_ensemble_weights(est, ratio)
-            final_est = getattr(model, 'final_estimator', None)
-            if final_est:
-                self._update_ensemble_weights(final_est, ratio)
+def _update_ensemble_weights(model, ratio):
+    weight_dict = {0: 1.0, 1: ratio}
+    if isinstance(model, XGBClassifier):
+        model.set_params(scale_pos_weight=ratio)
+    elif isinstance(model, LGBMClassifier):
+        model.set_params(scale_pos_weight=ratio)
+    elif hasattr(model, 'class_weight'):
+        model.set_params(class_weight=weight_dict)
+    elif hasattr(model, 'estimators'):
+        estimators = getattr(model, 'estimators', [])
+        if isinstance(estimators, list):
+            for _, est in estimators:
+                _update_ensemble_weights(est, ratio)
+        final_est = getattr(model, 'final_estimator', None)
+        if final_est:
+            _update_ensemble_weights(final_est, ratio)
+            
 
         
+@logger.catch()
+def instant_launch(X, y,estimator=None, query_strategy='uncertainty', random_state=42,
+                   initial_size=10, n_queries=50, query_size=1, threshold=0.5,
+                   test_size=0.5, imbalance_handle='None', sampling_strategy=0.8, **kwargs):
+    """
+    一键启动主动学习流程
     
+    :param X: 样本
+    :param y: 标签
+    :param estimator: 分类器
+    :param query_strategy: 查询策略  ('uncertainty', 'margin', 'entropy')
+    :param random_state:   随机种子
+    :param initial_size: 初始样本数量
+    :param n_queries: 查询次数
+    :param query_size: 每次查询的样本数量
+    :param threshold: 预测阈值
+    :param test_size: 测试集比例
+    :param imbalance_handle: 不平衡处理方式
+    :param sampling_strategy: 采样策略
+    :param kwargs: 其他参数
+    """
+    train = BasicActiveLearner(estimator=estimator, query_strategy=query_strategy, random_state=random_state)
+    train.load_data(X.values, y.values, test_size=test_size, imbalance_handle=imbalance_handle,  sampling_strategy=sampling_strategy)
+    train.initialize_data(initial_size=initial_size)
+    metrics = train.active_learning_cycle(n_queries=n_queries, query_size=query_size, threshold=threshold, **kwargs)
+   
+    return metrics, train
