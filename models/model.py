@@ -71,22 +71,15 @@ class BaseMod():
 
     def get_task(self):
         return self.task
-    
-    
-classifiers = {
-    'logistic_regression': LogisticRegression,
-    'svm': SVC,
-    'random_forest': RandomForestClassifier,
-    'knn': KNeighborsClassifier,
-    'mlp': MLPClassifier,
-    'decision_tree': DecisionTreeClassifier,
-    
-}
 
-
-class LogisticRegressionModel(BaseMod):
-    def __init__(self, **kwargs):
-        model = LogisticRegression(**kwargs)
-        super().__init__(model=model, task='classification')
-        
+    def f1_score(self, X, y):
+        y_pred = self.predict(X)
+        report = classification_report(y, y_pred, output_dict=True)
+        if '1' in report:
+            return report['1']['f1-score']
+        elif '1.0' in report:
+            return report['1.0']['f1-score']
+        else:
+            return 0.0
     
+

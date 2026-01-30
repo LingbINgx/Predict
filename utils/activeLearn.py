@@ -1,4 +1,5 @@
 
+from loguru import logger
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.datasets import make_classification
@@ -9,6 +10,9 @@ import modAL
 from modAL.models import ActiveLearner
 from modAL.uncertainty import entropy_sampling
 import modAL.uncertainty
+from imblearn.over_sampling import SMOTE
+from imblearn.combine import SMOTEENN
+from xgboost import XGBClassifier
 
 
 class BasicActiveLearner:
@@ -49,7 +53,7 @@ class BasicActiveLearner:
         self.X_test = None
         self.y_test = None
         
-    def load_data(self, X, y, test_size=0.5):
+    def load_data(self, X, y, test_size=0.5, imbalance_handle='None', **kwargs):
         """
         加载数据并划分测试集
         
@@ -57,6 +61,7 @@ class BasicActiveLearner:
         X: 特征数据
         y: 标签数据
         test_size: 测试集比例
+        imbalance_handle: 进行不平衡处理 ('None', 'SMOTE', 'SMOTEENN')
         """
         self.X_pool, self.X_test, self.y_pool, self.y_test = train_test_split(
             X, y,
@@ -64,9 +69,18 @@ class BasicActiveLearner:
             stratify=y,
             random_state=self.random_state
         )
+        im_dict = {
+            'SMOTE': SMOTE,
+            'SMOTEENN': SMOTEENN
+        }
+        if imbalance_handle in im_dict:
+            smote = im_dict.get(imbalance_handle, SMOTE)(random_state=self.random_state, **kwargs)
+            self.X_pool, self.y_pool = smote.fit_resample(self.X_pool, self.y_pool)
+            
         print(f"训练池样本数: {len(self.X_pool)}")
         print(f"测试集样本数: {len(self.X_test)}")
         return self.X_pool, self.y_pool, self.X_test, self.y_test
+    
         
     def initialize_data(self, initial_size=10):# -> tuple[Any, Any, Any, Any]:
         """
@@ -80,7 +94,6 @@ class BasicActiveLearner:
         )
         print(f"初始已标注样本数: {len(self.X_labeled)}")
         print(f"初始未标注样本数: {len(self.X_unlabeled)}")
-        
         return self.X_labeled, self.y_labeled, self.X_unlabeled, self.y_unlabeled
     
     def create_learner(self):
@@ -93,14 +106,15 @@ class BasicActiveLearner:
         )
         return self.learner
     
-    def active_learning_cycle(self, n_queries=50, query_size=1, th=0.5):
+    @logger.catch()
+    def active_learning_cycle(self, n_queries=50, query_size=1, threshold=0.5):
         """
         执行主动学习循环
         
         参数:
         n_queries: 查询轮次
         query_size: 每轮查询样本数
-        th: 分类阈值
+        threshold: 分类阈值
         
         返回:
         metrics: 包含每轮次性能指标的字典
@@ -129,12 +143,15 @@ class BasicActiveLearner:
                 y=query_y
             )
             
+            ratio = self._update_ratio()
+            self._update_ensemble_weights(self.learner.estimator, ratio)
+            
             self.X_unlabeled = np.delete(self.X_unlabeled, query_idx, axis=0)
             self.y_unlabeled = np.delete(self.y_unlabeled, query_idx, axis=0)
             
             # 评估性能
             y_prob = self.learner.predict_proba(self.X_test)[:, 1]
-            y_pred = (y_prob > th).astype(int)
+            y_pred = (y_prob > threshold).astype(int)
             
             accuracy = accuracy_score(self.y_test, y_pred)
             metrics["acc"].append(accuracy)
@@ -165,37 +182,26 @@ class BasicActiveLearner:
         plt.show()
 
 
-# def visualize_results(active_performance, random_performance):
-#     """
-#     可视化主动学习与随机采样的对比
-#     """
-#     plt.figure(figsize=(12, 6))
+    def _update_ratio(self):
+        y = self.learner.y_training
+        neg_cnt = np.sum(y == 0)
+        pos_cnt = np.sum(y == 1)
+        return neg_cnt / pos_cnt if pos_cnt > 0 else 1.0
     
-#     # 准确率曲线
-#     plt.subplot(1, 2, 1)
-#     plt.plot(active_performance, 'b-', label='主动学习', linewidth=2)
-#     plt.plot(random_performance, 'r--', label='随机采样', linewidth=2)
-#     plt.xlabel('查询轮次')
-#     plt.ylabel('测试集准确率')
-#     plt.title('主动学习 vs 随机采样')
-#     plt.legend()
-#     plt.grid(True, alpha=0.3)
+    def _update_ensemble_weights(self, model, ratio):
+        weight_dict = {0: 1.0, 1: ratio}
+        if isinstance(model, XGBClassifier):
+            model.set_params(scale_pos_weight=ratio)
+        elif hasattr(model, 'class_weight'):
+            model.set_params(class_weight=weight_dict)
+        elif hasattr(model, 'estimators'):
+            estimators = getattr(model, 'estimators', [])
+            if isinstance(estimators, list):
+                for _, est in estimators:
+                    self._update_ensemble_weights(est, ratio)
+            final_est = getattr(model, 'final_estimator', None)
+            if final_est:
+                self._update_ensemble_weights(final_est, ratio)
+
+        
     
-#     # 性能提升对比
-#     plt.subplot(1, 2, 2)
-#     active_cumulative = np.cumsum(active_performance)
-#     random_cumulative = np.cumsum(random_performance)
-#     plt.bar(['主动学习', '随机采样'], 
-#             [np.mean(active_performance), np.mean(random_performance)],
-#             color=['blue', 'red'], alpha=0.7)
-#     plt.ylabel('平均准确率')
-#     plt.title('平均性能对比')
-    
-#     plt.tight_layout()
-#     plt.show()
-    
-#     # 打印最终性能
-#     print(f"\n最终性能对比:")
-#     print(f"主动学习最终准确率: {active_performance[-1]:.4f}")
-#     print(f"随机采样最终准确率: {random_performance[-1]:.4f}")
-#     print(f"性能提升: {active_performance[-1] - random_performance[-1]:.4f}")
