@@ -24,9 +24,9 @@ labels = labels.astype(np.float64)
 
 
 clf1 = XGBClassifier(
-    n_estimators=300,
-    max_depth=10,
-    learning_rate=0.05,
+    n_estimators=453,
+    max_depth=7,
+    learning_rate=0.05256707351349778,
     objective='binary:logistic',
     eval_metric='aucpr', 
     subsample=0.5,
@@ -49,25 +49,34 @@ clf3 = RandomForestClassifier(
     max_samples=0.5
 )
 
+
 mod = VotingClassifier(
     estimators=[('xgb', clf1), ('lgbm', clf2), ('rf', clf3)],
     voting='soft',
-    weights=[0.33, 0.34, 0.33]
+    weights=[0.4, 0.5, 0.1]
 )
 
-metrics, train = utils.activeLearn.instant_launch(features, labels,
-                                                  estimator=mod,
+mod2 = VotingClassifier(
+    estimators=[('xgb', clf1), ('lgbm', clf2)],
+    voting='soft',
+    weights=[0.3, 0.6]
+)
+
+
+metrics, train = utils.activeLearn.instant_launch(X=features, y=labels,
+                                                  estimator=mod2,
                                                   query_strategy='entropy',
                                                   random_state=42,
                                                   initial_size=100,
                                                   n_queries=500,
                                                   query_size=100,
                                                   threshold=0.55,
-                                                  test_size=0.7,
-                                                  imbalance_handle='None',
+                                                  test_size=0.8,
+                                                  imbalance_handle='',
+                                                  sampling_strategy=0.8
                                                   )
 
-logres.write_results_to_file(mod, train.X_test, train.y_test)
+logres.write_results_to_file(mod2, train.X_test, train.y_test)
 
 train.plot_precision_recall_curve(metrics)
 

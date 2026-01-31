@@ -9,9 +9,9 @@ wheels/
 
 .venv
 
-
 .gitignore
 *.joblib
 *.png
 *.pdf
 *.txt
+!requirements.txt

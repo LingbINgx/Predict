@@ -14,6 +14,7 @@ from imblearn.over_sampling import SMOTE
 from imblearn.combine import SMOTEENN
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
+from utils.wraps import print_return
 
 class BasicActiveLearner:
 
@@ -33,12 +34,12 @@ class BasicActiveLearner:
             random_state=random_state
         )
         
-        params_dict = {
+        query_strategy_dict = {
             'uncertainty': modAL.uncertainty.uncertainty_sampling,
             'margin': modAL.uncertainty.margin_sampling,
             'entropy': modAL.uncertainty.entropy_sampling
         }
-        self.query_strategy = params_dict.get(query_strategy, modAL.uncertainty.uncertainty_sampling)
+        self.query_strategy = query_strategy_dict.get(query_strategy, modAL.uncertainty.uncertainty_sampling)
             
         self.learner = None
         self.X_labeled = None
@@ -89,6 +90,7 @@ class BasicActiveLearner:
         print(f"初始未标注样本数: {len(self.X_unlabeled)}")
         return self.X_labeled, self.y_labeled, self.X_unlabeled, self.y_unlabeled
     
+    
     def create_learner(self):
         self.learner = ActiveLearner(
             estimator=self.estimator,
@@ -97,6 +99,7 @@ class BasicActiveLearner:
             y_training=self.y_labeled
         )
         return self.learner
+    
     
     @logger.catch()
     def active_learning_cycle(self, n_queries=50, query_size=1, threshold=0.5, **kwargs):
@@ -166,6 +169,7 @@ class BasicActiveLearner:
         plt.show()
 
 
+    @print_return
     def _update_ratio(self):
         y = self.learner.y_training
         neg_cnt = np.sum(y == 0)
@@ -209,7 +213,7 @@ def instant_launch(X, y,estimator=None, query_strategy='uncertainty', random_sta
     :param query_size: 每次查询的样本数量
     :param threshold: 预测阈值
     :param test_size: 测试集比例
-    :param imbalance_handle: 不平衡处理方式
+    :param imbalance_handle: 不平衡处理 ('None', 'SMOTE', 'SMOTEENN')
     :param sampling_strategy: 采样策略
     :param kwargs: 其他参数
     """
