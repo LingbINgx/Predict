@@ -1,6 +1,6 @@
-**项目文档**: 请参阅 [docs/Overview.md](docs/Overview.md) 获取项目概览、安装与使用说明、以及模块 API 文档。
+**项目文档**: 请参阅 [docs/Architecture.md](docs/Architecture.md) 获取项目概览。
 
-```markdown
+
 ### 该数据集包含 10000 个数据点，以行的形式存储，每列包含 14 个特征。
 
 # 机器故障预测
